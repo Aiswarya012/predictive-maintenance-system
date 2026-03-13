@@ -76,6 +76,17 @@ app = FastAPI(
 )
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "Predictive Maintenance API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+        "predict": "/predict",
+    }
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "healthy"}
