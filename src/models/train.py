@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -71,35 +72,73 @@ def save_artifacts(
     return model_path, preprocessor_path
 
 
+def setup_mlflow(config: dict) -> None:
+    mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(config["mlflow"]["experiment_name"])
+    logger.info("MLflow tracking URI: %s", config["mlflow"]["tracking_uri"])
+    logger.info("MLflow experiment: %s", config["mlflow"]["experiment_name"])
+
+
 def run_training_pipeline() -> None:
     config = load_config()
     seed = config["project"]["random_seed"]
 
-    df = preprocess(config)
-    df = engineer_features(df)
+    setup_mlflow(config)
 
-    target_col = config["data"]["target_column"]
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(
-        df, target_col, config["data"]["test_size"], config["data"]["val_size"], seed
-    )
+    with mlflow.start_run(run_name=f"xgboost_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"):
+        mlflow.set_tag("model_type", "XGBClassifier")
+        mlflow.set_tag("dataset", "UCI AI4I 2020")
 
-    scaler = fit_preprocessor(X_train)
-    feature_names = list(X_train.columns)
+        df = preprocess(config)
+        df = engineer_features(df)
 
-    X_train_scaled = scaler.transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
+        mlflow.log_param("dataset_size", len(df))
+        mlflow.log_param("test_size", config["data"]["test_size"])
+        mlflow.log_param("val_size", config["data"]["val_size"])
+        mlflow.log_param("random_seed", seed)
 
-    model = train_model(X_train_scaled, y_train, config["model"]["params"])
+        target_col = config["data"]["target_column"]
+        X_train, X_val, X_test, y_train, y_val, y_test = split_data(
+            df, target_col, config["data"]["test_size"], config["data"]["val_size"], seed
+        )
 
-    logger.info("--- Validation Metrics ---")
-    evaluate_model(model, X_val_scaled, y_val)
+        mlflow.log_param("train_size", len(X_train))
+        mlflow.log_param("val_size_actual", len(X_val))
+        mlflow.log_param("test_size_actual", len(X_test))
+        mlflow.log_param("features", list(X_train.columns))
 
-    logger.info("--- Test Metrics ---")
-    evaluate_model(model, X_test_scaled, y_test)
+        mlflow.log_params({
+            f"model_{k}": v for k, v in config["model"]["params"].items()
+        })
 
-    save_dir = Path(config["model"]["save_dir"])
-    save_artifacts(model, scaler, save_dir, feature_names)
+        scaler = fit_preprocessor(X_train)
+        feature_names = list(X_train.columns)
+
+        X_train_scaled = scaler.transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
+
+        model = train_model(X_train_scaled, y_train, config["model"]["params"])
+
+        logger.info("--- Validation Metrics ---")
+        val_metrics = evaluate_model(model, X_val_scaled, y_val)
+        for name, value in val_metrics.items():
+            mlflow.log_metric(f"val_{name}", value)
+
+        logger.info("--- Test Metrics ---")
+        test_metrics = evaluate_model(model, X_test_scaled, y_test)
+        for name, value in test_metrics.items():
+            mlflow.log_metric(f"test_{name}", value)
+
+        save_dir = Path(config["model"]["save_dir"])
+        model_path, preprocessor_path = save_artifacts(model, scaler, save_dir, feature_names)
+
+        mlflow.log_artifact(str(model_path))
+        mlflow.log_artifact(str(preprocessor_path))
+
+        mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
+
+        logger.info("MLflow run logged successfully")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,10 @@ model:
     random_state: 42
   save_dir: models
 
+mlflow:
+  tracking_uri: http://103.49.125.28:8501/mlflow/
+  experiment_name: predictive-maintenance
+
 api:
   host: 0.0.0.0
   port: 8000
