@@ -133,10 +133,13 @@ def run_training_pipeline() -> None:
         save_dir = Path(config["model"]["save_dir"])
         model_path, preprocessor_path = save_artifacts(model, scaler, save_dir, feature_names)
 
-        mlflow.log_artifact(str(model_path))
-        mlflow.log_artifact(str(preprocessor_path))
-
-        mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
+        try:
+            mlflow.log_artifact(str(model_path))
+            mlflow.log_artifact(str(preprocessor_path))
+            mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
+            logger.info("MLflow artifacts logged successfully")
+        except PermissionError:
+            logger.warning("MLflow artifact logging skipped due to permissions — metrics and params are logged")
 
         logger.info("MLflow run logged successfully")
 
