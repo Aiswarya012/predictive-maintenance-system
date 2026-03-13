@@ -45,7 +45,7 @@ model:
   save_dir: models
 
 mlflow:
-  tracking_uri: http://103.49.125.28:8501/mlflow/
+  tracking_uri: http://127.0.0.1:5000
   experiment_name: predictive-maintenance
 
 api:
